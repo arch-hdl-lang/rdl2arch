@@ -1,0 +1,57 @@
+package ChannelizedPkg
+
+  enum ChannelizedCsr
+    Ch0,
+    Ch1,
+    Ch2,
+    Ch3,
+    IrqStatus,
+    IrqEnable
+  end enum ChannelizedCsr
+
+  struct Ch0Reg
+    enable: UInt<1>;
+    threshold: UInt<15>;
+  end struct Ch0Reg
+
+  struct Ch1Reg
+    enable: UInt<1>;
+    threshold: UInt<15>;
+  end struct Ch1Reg
+
+  struct Ch2Reg
+    enable: UInt<1>;
+    threshold: UInt<15>;
+  end struct Ch2Reg
+
+  struct Ch3Reg
+    enable: UInt<1>;
+    threshold: UInt<15>;
+  end struct Ch3Reg
+
+  struct IrqStatusReg
+    pending: UInt<8>;
+  end struct IrqStatusReg
+
+  struct IrqEnableReg
+    mask: UInt<8>;
+  end struct IrqEnableReg
+
+  struct ChannelizedHwifIn
+    _reserved: UInt<1>;
+  end struct ChannelizedHwifIn
+
+  struct ChannelizedHwifOut
+    ch_0_enable: UInt<1>;
+    ch_0_threshold: UInt<15>;
+    ch_1_enable: UInt<1>;
+    ch_1_threshold: UInt<15>;
+    ch_2_enable: UInt<1>;
+    ch_2_threshold: UInt<15>;
+    ch_3_enable: UInt<1>;
+    ch_3_threshold: UInt<15>;
+    irq_status_pending: UInt<8>;
+    irq_enable_mask: UInt<8>;
+  end struct ChannelizedHwifOut
+
+end package ChannelizedPkg

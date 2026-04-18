@@ -1,0 +1,91 @@
+use AccessTypesPkg;
+
+bus Apb4
+  param ADDR_W: const = 4;
+  param DATA_W: const = 32;
+
+  psel:    out Bool;
+  penable: out Bool;
+  pwrite:  out Bool;
+  paddr:   out UInt<ADDR_W>;
+  pwdata:  out UInt<DATA_W>;
+  pstrb:   out UInt<4>;
+  pprot:   out UInt<3>;
+
+  pready:  in  Bool;
+  prdata:  in  UInt<DATA_W>;
+  pslverr: in  Bool;
+end bus Apb4
+
+module AccessTypes
+  port clk:      in Clock<SysDomain>;
+  port rst:      in Reset<Sync>;
+  port s_apb: target Apb4<ADDR_W=4, DATA_W=32>;
+  port hwif_in:  in AccessTypesHwifIn;
+  port hwif_out: out AccessTypesHwifOut;
+
+  default seq on clk rising;
+
+  reg mixed_r: MixedReg reset rst => MixedReg { sw_rw_hw_r: 5, sw_rw_hw_rw: 0, sw_r_hw_w: 0, sw_w_hw_r: 0, w1c_field: 255 };
+  reg writes_r: WritesReg reset rst => WritesReg { w1s_field: 0, w0c_field: 255, any_clr: 240, toggle_field: 0 };
+  reg reads_r: ReadsReg reset rst => ReadsReg { rclr_field: 255, rset_field: 0 };
+
+  let access: Bool = s_apb.psel and s_apb.penable;
+  let wr_fire: Bool = access and s_apb.pwrite;
+  let rd_fire: Bool = access and not s_apb.pwrite;
+
+  let rdata_mux: UInt<32> = match s_apb.paddr
+    4'h0 => {mixed_r.w1c_field, 8'h0, mixed_r.sw_r_hw_w, mixed_r.sw_rw_hw_rw, mixed_r.sw_rw_hw_r},
+    4'h4 => {writes_r.toggle_field, writes_r.any_clr, writes_r.w0c_field, writes_r.w1s_field},
+    4'h8 => {16'h0, reads_r.rset_field, reads_r.rclr_field},
+    _ => 0
+  end match;
+
+  seq
+
+    mixed_r.sw_rw_hw_rw <= hwif_in.mixed_sw_rw_hw_rw;
+    mixed_r.sw_r_hw_w <= hwif_in.mixed_sw_r_hw_w;
+    if wr_fire
+      if s_apb.paddr == 4'h0
+        mixed_r.sw_rw_hw_r <= s_apb.pwdata[3:0];
+        mixed_r.sw_rw_hw_rw <= s_apb.pwdata[7:4];
+        mixed_r.sw_w_hw_r <= s_apb.pwdata[23:16];
+        mixed_r.w1c_field <= mixed_r.w1c_field & (~s_apb.pwdata[31:24]);
+      end if
+      if s_apb.paddr == 4'h4
+        writes_r.w1s_field <= writes_r.w1s_field | s_apb.pwdata[7:0];
+        writes_r.w0c_field <= writes_r.w0c_field & s_apb.pwdata[15:8];
+        writes_r.any_clr <= 8'h0;
+        writes_r.toggle_field <= writes_r.toggle_field ^ s_apb.pwdata[31:24];
+      end if
+      if s_apb.paddr == 4'h8
+        reads_r.rclr_field <= s_apb.pwdata[7:0];
+        reads_r.rset_field <= s_apb.pwdata[15:8];
+      end if
+    end if
+    if rd_fire
+      if s_apb.paddr == 4'h8
+        reads_r.rclr_field <= 8'h0;
+        reads_r.rset_field <= 8'hff;
+      end if
+    end if
+  end seq
+
+  comb
+    s_apb.pready  = true;
+    s_apb.prdata  = rdata_mux;
+    s_apb.pslverr = false;
+
+    hwif_out.mixed_sw_rw_hw_r = mixed_r.sw_rw_hw_r;
+    hwif_out.mixed_sw_rw_hw_rw = mixed_r.sw_rw_hw_rw;
+    hwif_out.mixed_sw_w_hw_r = mixed_r.sw_w_hw_r;
+    hwif_out.mixed_w1c_field = mixed_r.w1c_field;
+    hwif_out.writes_w1s_field = writes_r.w1s_field;
+    hwif_out.writes_w0c_field = writes_r.w0c_field;
+    hwif_out.writes_any_clr = writes_r.any_clr;
+    hwif_out.writes_toggle_field = writes_r.toggle_field;
+    hwif_out.reads_rclr_field = reads_r.rclr_field;
+    hwif_out.reads_rset_field = reads_r.rset_field;
+  end comb
+
+end module AccessTypes

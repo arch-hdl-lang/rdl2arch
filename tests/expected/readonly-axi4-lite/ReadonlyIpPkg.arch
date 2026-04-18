@@ -1,0 +1,21 @@
+package ReadonlyIpPkg
+
+  enum ReadonlyIpCsr
+    Sensor
+  end enum ReadonlyIpCsr
+
+  struct SensorReg
+    temperature: UInt<16>;
+    pressure: UInt<16>;
+  end struct SensorReg
+
+  struct ReadonlyIpHwifIn
+    sensor_temperature: UInt<16>;
+    sensor_pressure: UInt<16>;
+  end struct ReadonlyIpHwifIn
+
+  struct ReadonlyIpHwifOut
+    _reserved: UInt<1>;
+  end struct ReadonlyIpHwifOut
+
+end package ReadonlyIpPkg
