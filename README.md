@@ -1,2 +1,81 @@
 # rdl2arch
-Generate ARCH CSR design from SystemRDL 2.0 spec
+
+Generate ARCH HDL register-block source from a SystemRDL 2.0 specification.
+
+`rdl2arch` parses `.rdl` with the MIT-licensed `systemrdl-compiler` and emits
+`.arch` source files. The `arch build` compiler handles the final SystemVerilog
+emission, along with the correctness guarantees ARCH provides automatically
+(single-driver, no-implicit-latch, width safety, CDC).
+
+## Status
+
+v0.1 — implements the Feature A v1 subset of
+[`rdl-arch-integration-plan.md`](../rdl-arch-integration-plan.md):
+
+Supported:
+- `addrmap` top with flat `reg`s, nested `regfile` containers (flattened into
+  the top module), and register arrays (`reg[N]`, unrolled).
+- Fields with explicit bit positions and widths up to the bus data width.
+- `sw = rw / r / w`, `hw = rw / r / w`.
+- `onwrite = woclr / woset / wclr / wset / wot / wzc / wzs / wzt`.
+- `onread = rclr / rset`.
+- Explicit per-field `reset` values.
+- CPU interfaces: AXI4-Lite and APB4 (subordinate), emitted as an ARCH `bus`.
+- Read-back via an exhaustive `match` over decoded register addresses.
+
+Not yet supported (rejected with an actionable error):
+- RDL `mem` blocks.
+- Counters, interrupt / sticky fields.
+- AHB-Lite or other CPU interfaces.
+- RISC-V CSR semantics — see the companion `rdl2arch-riscv` package.
+
+## Install
+
+```bash
+pip install -e .
+```
+
+The `rdl2arch` command becomes available on `PATH`.
+
+## Usage
+
+```bash
+rdl2arch my_ip.rdl -o out/                  # default: AXI4-Lite
+rdl2arch my_ip.rdl -o out/ --cpuif apb4     # APB4 subordinate
+```
+
+Produces `out/MyIp.arch` + `out/MyIpPkg.arch`. Compile with the ARCH toolchain:
+
+```bash
+arch build out/MyIp.arch out/MyIpPkg.arch
+```
+
+### Library API
+
+```python
+from systemrdl import RDLCompiler
+from rdl2arch import ArchExporter
+
+rdlc = RDLCompiler()
+rdlc.compile_file("my_ip.rdl")
+root = rdlc.elaborate()
+ArchExporter().export(root.top, "out/")
+```
+
+## Notes on mapping
+
+- Generated subordinate port is named `s_axi` (AXI4-Lite) or `s_apb` (APB4).
+  `bus` is a reserved ARCH keyword and cannot be used as a port name.
+- One module per `addrmap`. Shared types (CSR enum, register structs, hwif
+  structs) go in a `*Pkg.arch` package.
+- RDL `regfile` containers do *not* map to ARCH `regfile` — RDL regfile is a
+  heterogeneous container whereas ARCH `regfile` is a homogeneous multi-port
+  array. Instead they are flattened into the top module; the path prefix is
+  preserved in generated identifiers (`irq.status.pending` → `irq_status_r`).
+- Register arrays (`reg[N]`) are unrolled at generation time, producing N
+  address-decoded entries (`ch_0`, `ch_1`, …). ARCH's `generate_for` cannot
+  contain `reg` declarations at present, so unrolling is the only option.
+
+## License
+
+Apache 2.0.

@@ -1,0 +1,21 @@
+// Register arrays at the top level, plus a regfile grouping.
+addrmap channelized {
+    reg ch_reg_t {
+        field { sw = rw; hw = r; reset = 0; } enable[0:0];
+        field { sw = rw; hw = r; reset = 0; } threshold[15:1];
+    };
+
+    // 4 channels at 0x00, 0x04, 0x08, 0x0c
+    ch_reg_t ch[4] @ 0x00 += 0x4;
+
+    // Regfile grouping for irq-related regs
+    regfile {
+        reg {
+            field { sw = rw; hw = r; onwrite = woclr; reset = 0; } pending[7:0];
+        } status @ 0x00;
+
+        reg {
+            field { sw = rw; hw = r; reset = 0; } mask[7:0];
+        } enable @ 0x04;
+    } irq @ 0x20;
+};
