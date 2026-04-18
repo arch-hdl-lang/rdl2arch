@@ -1,7 +1,10 @@
 # Design note: hwif port shape — struct vs. flat
 
 **Status:** deferred. Current generator emits struct-typed hwif ports.
-**Date logged:** 2026-04-17.
+**Date logged:** 2026-04-17. Updated 2026-04-18 after ARCH v0.41.1
+flipped packed-struct bit layout to SV convention (first-declared =
+MSB), which removes the "convention-surprise" motivation for switching
+but not the dual-backend test divergence.
 
 ## Current state
 
