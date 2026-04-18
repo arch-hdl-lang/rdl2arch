@@ -1,7 +1,9 @@
 # Design note: register arrays — unroll-to-scalars vs. Vec-typed reg
 
-**Status:** deferred. Current generator unrolls RDL `reg[N]` into N separately-named ARCH regs at Python generation time.
-**Date logged:** 2026-04-18.
+**Status:** deferred for the rdl2arch generator; the *compiler* side is done.
+**Date logged:** 2026-04-18. Updated 2026-04-18 after
+[arch-com#11](https://github.com/arch-hdl-lang/arch-com/pull/11) unblocked
+the Vec-at-module-scope pattern.
 
 ## Current state
 
@@ -81,7 +83,14 @@ per element (match on the upper address bits and then dereference via
 ## Why we held off now
 
 The current unroll-to-scalars approach works, all tests pass, and this is a
-quality-of-life improvement rather than a correctness gap. The Vec-typed path
-needs both compiler investigation (does Vec<Struct, N> reg work end-to-end?)
-and generator refactoring. Both are best done deliberately, not under the
-"one more thing" momentum of a larger PR.
+quality-of-life improvement rather than a correctness gap. Generator-side
+refactoring is best done deliberately, not under the "one more thing"
+momentum of a larger PR.
+
+## Status of the compiler-side pieces
+
+- ✅ `generate_for` body now accepts `seq` / `comb` blocks with a
+  write-target rule that forbids scalar LHS from inside the loop
+  ([arch-com#11](https://github.com/arch-hdl-lang/arch-com/pull/11)).
+- ⏳ Vec<StructType, N> reg end-to-end through `arch sim` / pybind — not yet
+  verified. Worth spot-checking before committing rdl2arch to the pattern.
