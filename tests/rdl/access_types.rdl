@@ -1,0 +1,22 @@
+// Exercises each sw/hw access combination and onwrite/onread variants.
+addrmap access_types {
+    reg {
+        field { sw = rw; hw = r; reset = 0x5;          } sw_rw_hw_r[3:0];
+        field { sw = rw; hw = rw; reset = 0x0; we;     } sw_rw_hw_rw[7:4];
+        field { sw = r;  hw = w;                        } sw_r_hw_w[15:8];
+        field { sw = w;  hw = r;  reset = 0x0;          } sw_w_hw_r[23:16];
+        field { sw = rw; hw = r;  onwrite = woclr; reset = 0xff; } w1c_field[31:24];
+    } mixed @ 0x00;
+
+    reg {
+        field { sw = rw; hw = r; onwrite = woset;  reset = 0x0; } w1s_field[7:0];
+        field { sw = rw; hw = r; onwrite = wzc;    reset = 0xff; } w0c_field[15:8];
+        field { sw = rw; hw = r; onwrite = wclr;   reset = 0xf0; } any_clr[23:16];
+        field { sw = rw; hw = r; onwrite = wot;    reset = 0x00; } toggle_field[31:24];
+    } writes @ 0x04;
+
+    reg {
+        field { sw = rw; hw = r; onread = rclr;    reset = 0xff; } rclr_field[7:0];
+        field { sw = rw; hw = r; onread = rset;    reset = 0x00; } rset_field[15:8];
+    } reads @ 0x08;
+};

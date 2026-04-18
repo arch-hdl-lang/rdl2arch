@@ -1,0 +1,11 @@
+// Minimal smoke fixture from plan §5.5.
+addrmap my_ip {
+    reg {
+        field { sw = rw; hw = r; reset = 0x0; } enable[0:0];
+        field { sw = rw; hw = r; reset = 0x0; } mode[4:1];
+    } ctrl @ 0x00;
+
+    reg {
+        field { sw = r;  hw = w; } status_code[7:0];
+    } status @ 0x04;
+};

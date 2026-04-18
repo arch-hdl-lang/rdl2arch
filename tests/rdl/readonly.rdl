@@ -1,0 +1,7 @@
+// All fields are sw-read / hw-write. Exercises the empty-write path.
+addrmap readonly_ip {
+    reg {
+        field { sw = r; hw = w; } temperature[15:0];
+        field { sw = r; hw = w; } pressure[31:16];
+    } sensor @ 0x00;
+};
