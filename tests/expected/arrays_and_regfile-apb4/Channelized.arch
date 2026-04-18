@@ -1,0 +1,95 @@
+use ChannelizedPkg;
+
+bus Apb4
+  param ADDR_W: const = 6;
+  param DATA_W: const = 32;
+
+  psel:    out Bool;
+  penable: out Bool;
+  pwrite:  out Bool;
+  paddr:   out UInt<ADDR_W>;
+  pwdata:  out UInt<DATA_W>;
+  pstrb:   out UInt<4>;
+  pprot:   out UInt<3>;
+
+  pready:  in  Bool;
+  prdata:  in  UInt<DATA_W>;
+  pslverr: in  Bool;
+end bus Apb4
+
+module Channelized
+  port clk:      in Clock<SysDomain>;
+  port rst:      in Reset<Sync>;
+  port s_apb: target Apb4<ADDR_W=6, DATA_W=32>;
+  port hwif_in:  in ChannelizedHwifIn;
+  port hwif_out: out ChannelizedHwifOut;
+
+  default seq on clk rising;
+
+  reg ch_0_r: Ch0Reg reset rst => Ch0Reg { enable: 0, threshold: 0 };
+  reg ch_1_r: Ch1Reg reset rst => Ch1Reg { enable: 0, threshold: 0 };
+  reg ch_2_r: Ch2Reg reset rst => Ch2Reg { enable: 0, threshold: 0 };
+  reg ch_3_r: Ch3Reg reset rst => Ch3Reg { enable: 0, threshold: 0 };
+  reg irq_status_r: IrqStatusReg reset rst => IrqStatusReg { pending: 0 };
+  reg irq_enable_r: IrqEnableReg reset rst => IrqEnableReg { mask: 0 };
+
+  let access: Bool = s_apb.psel and s_apb.penable;
+  let wr_fire: Bool = access and s_apb.pwrite;
+  let rd_fire: Bool = access and not s_apb.pwrite;
+
+  let rdata_mux: UInt<32> = match s_apb.paddr
+    6'h0 => {16'h0, ch_0_r.threshold, ch_0_r.enable},
+    6'h4 => {16'h0, ch_1_r.threshold, ch_1_r.enable},
+    6'h8 => {16'h0, ch_2_r.threshold, ch_2_r.enable},
+    6'hc => {16'h0, ch_3_r.threshold, ch_3_r.enable},
+    6'h20 => {24'h0, irq_status_r.pending},
+    6'h24 => {24'h0, irq_enable_r.mask},
+    _ => 0
+  end match;
+
+  seq
+
+    if wr_fire
+      if s_apb.paddr == 6'h0
+        ch_0_r.enable <= s_apb.pwdata[0];
+        ch_0_r.threshold <= s_apb.pwdata[15:1];
+      end if
+      if s_apb.paddr == 6'h4
+        ch_1_r.enable <= s_apb.pwdata[0];
+        ch_1_r.threshold <= s_apb.pwdata[15:1];
+      end if
+      if s_apb.paddr == 6'h8
+        ch_2_r.enable <= s_apb.pwdata[0];
+        ch_2_r.threshold <= s_apb.pwdata[15:1];
+      end if
+      if s_apb.paddr == 6'hc
+        ch_3_r.enable <= s_apb.pwdata[0];
+        ch_3_r.threshold <= s_apb.pwdata[15:1];
+      end if
+      if s_apb.paddr == 6'h20
+        irq_status_r.pending <= irq_status_r.pending & (~s_apb.pwdata[7:0]);
+      end if
+      if s_apb.paddr == 6'h24
+        irq_enable_r.mask <= s_apb.pwdata[7:0];
+      end if
+    end if
+  end seq
+
+  comb
+    s_apb.pready  = true;
+    s_apb.prdata  = rdata_mux;
+    s_apb.pslverr = false;
+
+    hwif_out.ch_0_enable = ch_0_r.enable;
+    hwif_out.ch_0_threshold = ch_0_r.threshold;
+    hwif_out.ch_1_enable = ch_1_r.enable;
+    hwif_out.ch_1_threshold = ch_1_r.threshold;
+    hwif_out.ch_2_enable = ch_2_r.enable;
+    hwif_out.ch_2_threshold = ch_2_r.threshold;
+    hwif_out.ch_3_enable = ch_3_r.enable;
+    hwif_out.ch_3_threshold = ch_3_r.threshold;
+    hwif_out.irq_status_pending = irq_status_r.pending;
+    hwif_out.irq_enable_mask = irq_enable_r.mask;
+  end comb
+
+end module Channelized

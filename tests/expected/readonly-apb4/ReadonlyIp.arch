@@ -1,0 +1,54 @@
+use ReadonlyIpPkg;
+
+bus Apb4
+  param ADDR_W: const = 2;
+  param DATA_W: const = 32;
+
+  psel:    out Bool;
+  penable: out Bool;
+  pwrite:  out Bool;
+  paddr:   out UInt<ADDR_W>;
+  pwdata:  out UInt<DATA_W>;
+  pstrb:   out UInt<4>;
+  pprot:   out UInt<3>;
+
+  pready:  in  Bool;
+  prdata:  in  UInt<DATA_W>;
+  pslverr: in  Bool;
+end bus Apb4
+
+module ReadonlyIp
+  port clk:      in Clock<SysDomain>;
+  port rst:      in Reset<Sync>;
+  port s_apb: target Apb4<ADDR_W=2, DATA_W=32>;
+  port hwif_in:  in ReadonlyIpHwifIn;
+  port hwif_out: out ReadonlyIpHwifOut;
+
+  default seq on clk rising;
+
+  reg sensor_r: SensorReg reset rst => SensorReg { temperature: 0, pressure: 0 };
+
+  let access: Bool = s_apb.psel and s_apb.penable;
+  let wr_fire: Bool = access and s_apb.pwrite;
+  let rd_fire: Bool = access and not s_apb.pwrite;
+
+  let rdata_mux: UInt<32> = match s_apb.paddr
+    2'h0 => {sensor_r.pressure, sensor_r.temperature},
+    _ => 0
+  end match;
+
+  seq
+
+    sensor_r.temperature <= hwif_in.sensor_temperature;
+    sensor_r.pressure <= hwif_in.sensor_pressure;
+  end seq
+
+  comb
+    s_apb.pready  = true;
+    s_apb.prdata  = rdata_mux;
+    s_apb.pslverr = false;
+
+    hwif_out._reserved = 0;
+  end comb
+
+end module ReadonlyIp

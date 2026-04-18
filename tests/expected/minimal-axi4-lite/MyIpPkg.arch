@@ -1,0 +1,26 @@
+package MyIpPkg
+
+  enum MyIpCsr
+    Ctrl,
+    Status
+  end enum MyIpCsr
+
+  struct CtrlReg
+    enable: UInt<1>;
+    mode: UInt<4>;
+  end struct CtrlReg
+
+  struct StatusReg
+    status_code: UInt<8>;
+  end struct StatusReg
+
+  struct MyIpHwifIn
+    status_status_code: UInt<8>;
+  end struct MyIpHwifIn
+
+  struct MyIpHwifOut
+    ctrl_enable: UInt<1>;
+    ctrl_mode: UInt<4>;
+  end struct MyIpHwifOut
+
+end package MyIpPkg

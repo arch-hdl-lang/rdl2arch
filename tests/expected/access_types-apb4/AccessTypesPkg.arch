@@ -1,0 +1,47 @@
+package AccessTypesPkg
+
+  enum AccessTypesCsr
+    Mixed,
+    Writes,
+    Reads
+  end enum AccessTypesCsr
+
+  struct MixedReg
+    sw_rw_hw_r: UInt<4>;
+    sw_rw_hw_rw: UInt<4>;
+    sw_r_hw_w: UInt<8>;
+    sw_w_hw_r: UInt<8>;
+    w1c_field: UInt<8>;
+  end struct MixedReg
+
+  struct WritesReg
+    w1s_field: UInt<8>;
+    w0c_field: UInt<8>;
+    any_clr: UInt<8>;
+    toggle_field: UInt<8>;
+  end struct WritesReg
+
+  struct ReadsReg
+    rclr_field: UInt<8>;
+    rset_field: UInt<8>;
+  end struct ReadsReg
+
+  struct AccessTypesHwifIn
+    mixed_sw_rw_hw_rw: UInt<4>;
+    mixed_sw_r_hw_w: UInt<8>;
+  end struct AccessTypesHwifIn
+
+  struct AccessTypesHwifOut
+    mixed_sw_rw_hw_r: UInt<4>;
+    mixed_sw_rw_hw_rw: UInt<4>;
+    mixed_sw_w_hw_r: UInt<8>;
+    mixed_w1c_field: UInt<8>;
+    writes_w1s_field: UInt<8>;
+    writes_w0c_field: UInt<8>;
+    writes_any_clr: UInt<8>;
+    writes_toggle_field: UInt<8>;
+    reads_rclr_field: UInt<8>;
+    reads_rset_field: UInt<8>;
+  end struct AccessTypesHwifOut
+
+end package AccessTypesPkg

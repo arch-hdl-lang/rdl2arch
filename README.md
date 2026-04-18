@@ -50,6 +50,20 @@ Produces `out/MyIp.arch` + `out/MyIpPkg.arch`. Compile with the ARCH toolchain:
 arch build out/MyIp.arch out/MyIpPkg.arch
 ```
 
+### Example outputs
+
+See `tests/expected/` for checked-in samples — one directory per
+`<fixture>-<cpuif>` pair, each containing the generated `*.arch` files for the
+RDL inputs under `tests/rdl/`. Good for getting a feel for what the emitter
+produces before running it on your own specs.
+
+The golden diff test (`pytest tests/test_golden.py`) guards against unintended
+emitter changes. To refresh after an intentional change:
+
+```bash
+UPDATE_GOLDEN=1 pytest tests/test_golden.py
+```
+
 ### Library API
 
 ```python
