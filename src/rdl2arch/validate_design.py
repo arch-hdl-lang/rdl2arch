@@ -43,6 +43,12 @@ def validate(design: DesignModel) -> None:
                 f"register '{reg.node.get_path()}': regwidth {reg.regwidth} "
                 f"exceeds bus data width {design.data_width}"
             )
+        # v1: 1-D arrays only.
+        if reg.node.is_array and len(reg.node.array_dimensions or []) > 1:
+            raise UnsupportedRdlError(
+                f"multi-dimensional register arrays not yet supported (v1): "
+                f"'{reg.node.get_path()}'"
+            )
         for fld in reg.fields:
             if fld.onwrite not in _SUPPORTED_ONWRITE:
                 raise UnsupportedRdlError(

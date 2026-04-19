@@ -26,10 +26,7 @@ module Channelized
 
   default seq on clk rising;
 
-  reg ch_0_r: Ch0Reg reset rst => Ch0Reg { enable: 0, threshold: 0 };
-  reg ch_1_r: Ch1Reg reset rst => Ch1Reg { enable: 0, threshold: 0 };
-  reg ch_2_r: Ch2Reg reset rst => Ch2Reg { enable: 0, threshold: 0 };
-  reg ch_3_r: Ch3Reg reset rst => Ch3Reg { enable: 0, threshold: 0 };
+  reg ch_r: Vec<ChReg, 4> reset rst => ChReg { enable: 0, threshold: 0 };
   reg irq_status_r: IrqStatusReg reset rst => IrqStatusReg { pending: 0 };
   reg irq_enable_r: IrqEnableReg reset rst => IrqEnableReg { mask: 0 };
 
@@ -38,10 +35,10 @@ module Channelized
   let rd_fire: Bool = access and not s_apb.pwrite;
 
   let rdata_mux: UInt<32> = match s_apb.paddr
-    6'h0 => {16'h0, ch_0_r.threshold, ch_0_r.enable},
-    6'h4 => {16'h0, ch_1_r.threshold, ch_1_r.enable},
-    6'h8 => {16'h0, ch_2_r.threshold, ch_2_r.enable},
-    6'hc => {16'h0, ch_3_r.threshold, ch_3_r.enable},
+    6'h0 => {16'h0, ch_r[0].threshold, ch_r[0].enable},
+    6'h4 => {16'h0, ch_r[1].threshold, ch_r[1].enable},
+    6'h8 => {16'h0, ch_r[2].threshold, ch_r[2].enable},
+    6'hc => {16'h0, ch_r[3].threshold, ch_r[3].enable},
     6'h20 => {24'h0, irq_status_r.pending},
     6'h24 => {24'h0, irq_enable_r.mask},
     _ => 0
@@ -50,22 +47,6 @@ module Channelized
   seq
 
     if wr_fire
-      if s_apb.paddr == 6'h0
-        ch_0_r.enable <= s_apb.pwdata[0];
-        ch_0_r.threshold <= s_apb.pwdata[15:1];
-      end if
-      if s_apb.paddr == 6'h4
-        ch_1_r.enable <= s_apb.pwdata[0];
-        ch_1_r.threshold <= s_apb.pwdata[15:1];
-      end if
-      if s_apb.paddr == 6'h8
-        ch_2_r.enable <= s_apb.pwdata[0];
-        ch_2_r.threshold <= s_apb.pwdata[15:1];
-      end if
-      if s_apb.paddr == 6'hc
-        ch_3_r.enable <= s_apb.pwdata[0];
-        ch_3_r.threshold <= s_apb.pwdata[15:1];
-      end if
       if s_apb.paddr == 6'h20
         irq_status_r.pending <= irq_status_r.pending & (~s_apb.pwdata[7:0]);
       end if
@@ -75,19 +56,28 @@ module Channelized
     end if
   end seq
 
+  generate_for i in 0..3
+    seq
+      if wr_fire and s_apb.paddr == 6'h0 + i * 4
+        ch_r[i].enable <= s_apb.pwdata[0];
+        ch_r[i].threshold <= s_apb.pwdata[15:1];
+      end if
+    end seq
+  end generate_for
+
   comb
     s_apb.pready  = true;
     s_apb.prdata  = rdata_mux;
     s_apb.pslverr = false;
 
-    hwif_out.ch_0_enable = ch_0_r.enable;
-    hwif_out.ch_0_threshold = ch_0_r.threshold;
-    hwif_out.ch_1_enable = ch_1_r.enable;
-    hwif_out.ch_1_threshold = ch_1_r.threshold;
-    hwif_out.ch_2_enable = ch_2_r.enable;
-    hwif_out.ch_2_threshold = ch_2_r.threshold;
-    hwif_out.ch_3_enable = ch_3_r.enable;
-    hwif_out.ch_3_threshold = ch_3_r.threshold;
+    hwif_out.ch_0_enable = ch_r[0].enable;
+    hwif_out.ch_0_threshold = ch_r[0].threshold;
+    hwif_out.ch_1_enable = ch_r[1].enable;
+    hwif_out.ch_1_threshold = ch_r[1].threshold;
+    hwif_out.ch_2_enable = ch_r[2].enable;
+    hwif_out.ch_2_threshold = ch_r[2].threshold;
+    hwif_out.ch_3_enable = ch_r[3].enable;
+    hwif_out.ch_3_threshold = ch_r[3].threshold;
     hwif_out.irq_status_pending = irq_status_r.pending;
     hwif_out.irq_enable_mask = irq_enable_r.mask;
   end comb

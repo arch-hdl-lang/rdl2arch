@@ -1,9 +1,8 @@
 # Design note: register arrays — unroll-to-scalars vs. Vec-typed reg
 
-**Status:** deferred for the rdl2arch generator; the *compiler* side is done.
-**Date logged:** 2026-04-18. Updated 2026-04-18 after
-[arch-com#11](https://github.com/arch-hdl-lang/arch-com/pull/11) unblocked
-the Vec-at-module-scope pattern.
+**Status:** ✅ Done. Generator emits the Vec-at-module-scope pattern.
+**Date logged:** 2026-04-18. Compiler unblocked via arch-com #11 / #13 /
+#14 / #15 / #16. Generator-side refactor landed in this commit.
 
 ## Current state
 

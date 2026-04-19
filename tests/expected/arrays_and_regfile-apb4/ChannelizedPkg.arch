@@ -9,25 +9,10 @@ package ChannelizedPkg
     IrqEnable
   end enum ChannelizedCsr
 
-  struct Ch0Reg
+  struct ChReg
     enable: UInt<1>;
     threshold: UInt<15>;
-  end struct Ch0Reg
-
-  struct Ch1Reg
-    enable: UInt<1>;
-    threshold: UInt<15>;
-  end struct Ch1Reg
-
-  struct Ch2Reg
-    enable: UInt<1>;
-    threshold: UInt<15>;
-  end struct Ch2Reg
-
-  struct Ch3Reg
-    enable: UInt<1>;
-    threshold: UInt<15>;
-  end struct Ch3Reg
+  end struct ChReg
 
   struct IrqStatusReg
     pending: UInt<8>;

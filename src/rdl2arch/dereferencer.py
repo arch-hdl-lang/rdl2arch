@@ -9,17 +9,15 @@ def flat_path(node, top) -> str:
     """Return the hierarchical path from `top` to `node`, joined with '_'.
 
     `top` itself contributes no component — so a register `ctrl` under the top
-    addrmap becomes `ctrl`, a field `ctrl.enable` becomes `ctrl_enable`. Array
-    indices are appended as `_<i>` segments: `ch[2].v` → `ch_2_v`.
+    addrmap becomes `ctrl`, a field `ctrl.enable` becomes `ctrl_enable`. We
+    intentionally do NOT include array indices here: arrays are represented as
+    a single Vec-typed reg in the generated ARCH, so the base name is shared
+    across all elements (the per-element index lives in the Vec subscript).
     """
     parts: list[str] = []
     cur = node
     while cur is not None and cur is not top:
-        name = filter_identifier(cur.inst_name)
-        idx = getattr(cur, "current_idx", None)
-        if idx:
-            name = name + "_" + "_".join(str(i) for i in idx)
-        parts.append(name)
+        parts.append(filter_identifier(cur.inst_name))
         cur = cur.parent
     return "_".join(reversed(parts))
 
@@ -37,16 +35,6 @@ def reg_struct_name(reg: RegNode, top) -> str:
 def field_ident(field: FieldNode) -> str:
     """Field name inside its register's struct."""
     return filter_identifier(field.inst_name)
-
-
-def hwif_out_member(field: FieldNode, top) -> str:
-    """Member name for this field inside the MyIpHwifOut struct."""
-    return flat_path(field, top)
-
-
-def hwif_in_member(field: FieldNode, top) -> str:
-    """Member name for this field inside the MyIpHwifIn struct."""
-    return flat_path(field, top)
 
 
 def csr_enum_variant(reg: RegNode, top) -> str:

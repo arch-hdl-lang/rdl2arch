@@ -8,15 +8,20 @@ def emit_package(design: DesignModel) -> str:
     lines.append(f"package {design.package_name}")
     lines.append("")
 
-    # CSR address enum — variant order matches register declaration order.
+    # CSR address enum — one variant per address-decoded entry. Arrays expand
+    # to N variants (Ch0, Ch1, ...); scalars produce a single variant.
+    csr_variants: list[str] = []
+    for reg in design.regs:
+        for elem_idx, _ in reg.elements():
+            csr_variants.append(reg.enum_variant_for(elem_idx))
     lines.append(f"  enum {design.csr_enum_name}")
-    for i, reg in enumerate(design.regs):
-        sep = "," if i < len(design.regs) - 1 else ""
-        lines.append(f"    {reg.enum_variant}{sep}")
+    for i, name in enumerate(csr_variants):
+        sep = "," if i < len(csr_variants) - 1 else ""
+        lines.append(f"    {name}{sep}")
     lines.append(f"  end enum {design.csr_enum_name}")
     lines.append("")
 
-    # One struct per register.
+    # One struct per register declaration (shared across array elements).
     for reg in design.regs:
         lines.append(f"  struct {reg.struct_name}")
         for f in reg.fields:
@@ -24,10 +29,17 @@ def emit_package(design: DesignModel) -> str:
         lines.append(f"  end struct {reg.struct_name}")
         lines.append("")
 
-    # Hwif in: hw-writable fields (hw = w / rw) become inputs.
+    # Hwif in: hw-writable fields become per-element scalar inputs. Iterating
+    # each (reg, elem, field) keeps the hwif interface flat — consumers can
+    # wire individual bits without unpacking a Vec.
     lines.append(f"  struct {design.hwif_in_struct}")
-    in_members = [(f.hwif_in_name, f.width) for r in design.regs for f in r.fields
-                  if f.hw_writable]
+    in_members = [
+        (reg.hwif_member(elem_idx, f.name), f.width)
+        for reg in design.regs
+        for elem_idx, _ in reg.elements()
+        for f in reg.fields
+        if f.hw_writable
+    ]
     if not in_members:
         lines.append("    _reserved: UInt<1>;")
     else:
@@ -36,10 +48,15 @@ def emit_package(design: DesignModel) -> str:
     lines.append(f"  end struct {design.hwif_in_struct}")
     lines.append("")
 
-    # Hwif out: hw-readable fields (hw = r / rw) become outputs.
+    # Hwif out: hw-readable fields become per-element scalar outputs.
     lines.append(f"  struct {design.hwif_out_struct}")
-    out_members = [(f.hwif_out_name, f.width) for r in design.regs for f in r.fields
-                   if f.hw_readable]
+    out_members = [
+        (reg.hwif_member(elem_idx, f.name), f.width)
+        for reg in design.regs
+        for elem_idx, _ in reg.elements()
+        for f in reg.fields
+        if f.hw_readable
+    ]
     if not out_members:
         lines.append("    _reserved: UInt<1>;")
     else:
