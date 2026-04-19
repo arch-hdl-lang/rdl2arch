@@ -1,10 +1,11 @@
 # Design note: hwif port shape — struct vs. flat
 
-**Status:** deferred. Current generator emits struct-typed hwif ports.
+**Status:** *not a gap* — treated as acceptable steady state.
 **Date logged:** 2026-04-17. Updated 2026-04-18 after ARCH v0.41.1
 flipped packed-struct bit layout to SV convention (first-declared =
-MSB), which removes the "convention-surprise" motivation for switching
-but not the dual-backend test divergence.
+MSB), which removes the "convention-surprise" motivation for
+switching. Updated again after weighing unification effort vs.
+payoff; see the "Unification options" section below.
 
 ## Current state
 
@@ -65,7 +66,48 @@ Sketch of the change:
 ## Why we held off
 
 The struct-port shape currently works end-to-end on both backends with
-separate test sets, all 35 tests green. Unifying the tests is a quality-of-life
-improvement, not a correctness blocker. Logging the design decision so a
-future pass can make the change deliberately rather than discovering the
-divergence from scratch.
+separate test sets, all 43 tests green. Unifying the tests is a
+quality-of-life improvement, not a correctness blocker.
+
+## Unification options (considered, punted)
+
+Writing the same test body and running it on both backends would require
+closing *several* divergences, not just struct-field access:
+
+| Divergence | cocotb + Verilator | arch_cocotb pybind |
+|---|---|---|
+| Signal access | `dut.sig.value = X` | `dut.sig = X` (direct pybind) |
+| Struct field | packed bits: `dut.hwif.value`, bit-decode | native attr: `dut.hwif.field` |
+| Clock | `cocotb.start_soon(Clock(...).start())` | manual `tick()` loop |
+| Flow | `async def`, `await RisingEdge(clk)` | sync, `tick(dut)` |
+| Runner | `cocotb_tools.runner` | custom harness |
+
+Four options considered:
+
+1. **Leave as-is.** Two test sets; shared drivers cover most of the
+   duplication. Current state.
+2. **`StructHandle` shim** (~50 lines). Wraps the hwif handle with a
+   layout descriptor; detects backend at construction time. Closes
+   struct-field access only; clock / async / runner divergences remain.
+3. **cocotb → arch_sim translator** (~150 lines of AST rewriting).
+   Write tests in cocotb style, auto-translate to arch_sim direct-drive.
+   Works but becomes live infrastructure — every cocotb feature the
+   tests use adds a new translation rule.
+4. **Fix `arch_cocotb.ArchSignal` to handle struct-typed signals** on
+   the arch-com side. Would let tests written in cocotb style run
+   natively on both backends (real cocotb for Verilator, arch_cocotb
+   for pybind). ~50 lines of compiler-side work. This is the cleanest
+   long-term answer if unification is ever prioritized.
+
+Decision: **leave as-is.** The test-set split is small, each backend
+has its own idioms that users expect when debugging, and the effort to
+unify hasn't justified itself. If a future change creates pressure —
+e.g. we add many new register-block fixtures and the duplication cost
+climbs — revisit with option 4.
+
+Flat-port emission from the generator (original recommendation at the
+top of this note) remains the cleanest *end-to-end* solution: it would
+avoid the struct-port problem entirely, unify scalar-signal access on
+both backends, and match PeakRDL-regblock convention. Still a valid
+future direction; deferred with this discussion rather than pursued
+today.
