@@ -1,5 +1,10 @@
 """Per-field ARCH code fragments: write-side seq, hwif-in seq, hwif-out comb,
-and readback expressions."""
+and readback expressions.
+
+The functions take a `state_ref` string for the element being acted on, which
+is `<reg>_r` for scalar regs or `<reg>_r[<idx>]` for array elements. Callers
+in emit_regblock supply the right form per element.
+"""
 
 from systemrdl.rdltypes import OnReadType, OnWriteType
 
@@ -7,7 +12,6 @@ from .scan_design import FieldModel, RegModel
 
 
 def _wdata_slice(wdata_expr: str, field: FieldModel) -> str:
-    """Slice wdata for a field."""
     if field.width == 1:
         return f"{wdata_expr}[{field.lsb}]"
     return f"{wdata_expr}[{field.msb}:{field.lsb}]"
@@ -26,14 +30,12 @@ def _zero_literal(width: int) -> str:
     return f"{width}'h0"
 
 
-def field_write_stmts(field: FieldModel, reg: RegModel, wdata_expr: str) -> list[str]:
-    """Return the ARCH seq statements that fire on a CPU write to this field's
-    parent register. Does NOT include the surrounding `if wr_fire and addr==...`
-    — that's wrapped by the register-level emitter.
-    """
+def field_write_stmts(field: FieldModel, state_ref: str, wdata_expr: str) -> list[str]:
+    """ARCH seq statements for a CPU write to this field. Caller wraps in the
+    address-decoded `if`. `state_ref` is the per-element storage reference."""
     if not field.sw_writable:
         return []
-    lhs = f"{reg.state_name}.{field.name}"
+    lhs = f"{state_ref}.{field.name}"
     slice_expr = _wdata_slice(wdata_expr, field)
     ones = _ones_literal(field.width)
     zeros = _zero_literal(field.width)
@@ -42,37 +44,29 @@ def field_write_stmts(field: FieldModel, reg: RegModel, wdata_expr: str) -> list
     if ow is None:
         return [f"{lhs} <= {slice_expr};"]
     if ow == OnWriteType.woclr:
-        # Write-one-to-clear: bits written as 1 are cleared.
         return [f"{lhs} <= {lhs} & (~{slice_expr});"]
     if ow == OnWriteType.woset:
-        # Write-one-to-set: bits written as 1 are set.
         return [f"{lhs} <= {lhs} | {slice_expr};"]
     if ow == OnWriteType.wclr:
-        # Any write clears the field.
         return [f"{lhs} <= {zeros};"]
     if ow == OnWriteType.wset:
-        # Any write sets the field.
         return [f"{lhs} <= {ones};"]
     if ow == OnWriteType.wot:
-        # Write-one-to-toggle
         return [f"{lhs} <= {lhs} ^ {slice_expr};"]
     if ow == OnWriteType.wzc:
-        # Write-zero-to-clear: clear bits where wdata is 0 -> AND with wdata
         return [f"{lhs} <= {lhs} & {slice_expr};"]
     if ow == OnWriteType.wzs:
-        # Write-zero-to-set: set bits where wdata is 0 -> OR with ~wdata
         return [f"{lhs} <= {lhs} | (~{slice_expr});"]
     if ow == OnWriteType.wzt:
-        # Write-zero-to-toggle: toggle bits where wdata is 0 -> XOR with ~wdata
         return [f"{lhs} <= {lhs} ^ (~{slice_expr});"]
     raise NotImplementedError(f"onwrite={ow}")
 
 
-def field_read_side_stmts(field: FieldModel, reg: RegModel) -> list[str]:
-    """Statements for rclr / rset — fire on a CPU read to the parent register."""
+def field_read_side_stmts(field: FieldModel, state_ref: str) -> list[str]:
+    """rclr / rset statements that fire on a CPU read."""
     if field.onread is None:
         return []
-    lhs = f"{reg.state_name}.{field.name}"
+    lhs = f"{state_ref}.{field.name}"
     if field.onread == OnReadType.rclr:
         return [f"{lhs} <= {_zero_literal(field.width)};"]
     if field.onread == OnReadType.rset:
@@ -80,29 +74,27 @@ def field_read_side_stmts(field: FieldModel, reg: RegModel) -> list[str]:
     raise NotImplementedError(f"onread={field.onread}")
 
 
-def field_hwif_in_seq(field: FieldModel, reg: RegModel) -> list[str]:
-    """If hw drives the field (hw = w / rw), continuously register hwif_in into
-    the field state. RDL permits a write-priority policy; v1 uses hw-low-priority
-    (sw writes via the CPU win) by emitting the hwif_in copy unconditionally
-    outside the sw-write `if`, and overwriting inside on sw writes."""
+def field_hwif_in_seq(field: FieldModel, state_ref: str, hwif_member: str) -> list[str]:
+    """Continuous register copy from hwif_in to the field state (when hw drives)."""
     if not field.hw_writable:
         return []
-    lhs = f"{reg.state_name}.{field.name}"
-    return [f"{lhs} <= hwif_in.{field.hwif_in_name};"]
+    return [f"{state_ref}.{field.name} <= hwif_in.{hwif_member};"]
 
 
-def field_hwif_out_comb(field: FieldModel, reg: RegModel) -> list[str]:
+def field_hwif_out_comb(field: FieldModel, state_ref: str, hwif_member: str) -> list[str]:
+    """Combinational drive of hwif_out from field state."""
     if not field.hw_readable:
         return []
-    return [f"hwif_out.{field.hwif_out_name} = {reg.state_name}.{field.name};"]
+    return [f"hwif_out.{hwif_member} = {state_ref}.{field.name};"]
 
 
-def reg_read_expr(reg: RegModel, data_width: int) -> str:
-    """Compose the readback value for a full register, padded to data_width."""
+def reg_read_expr(reg: RegModel, state_ref: str, data_width: int) -> str:
+    """Compose the readback value for one register (one element of an array, or
+    the whole reg for a scalar). Pads to data_width with zeros."""
     if not reg.fields:
         return _zero_literal(data_width)
 
-    # Build MSB->LSB by covering all bit positions; any hole becomes zero padding.
+    # MSB-first concat: walk fields by descending lsb, padding holes with zeros.
     fields_sorted = sorted(reg.fields, key=lambda f: f.lsb, reverse=True)
     parts: list[str] = []
     next_bit = reg.regwidth - 1
@@ -111,10 +103,7 @@ def reg_read_expr(reg: RegModel, data_width: int) -> str:
             gap = next_bit - f.msb
             parts.append(f"{gap}'h0")
         if f.sw_readable:
-            if f.width == 1:
-                parts.append(f"{reg.state_name}.{f.name}")
-            else:
-                parts.append(f"{reg.state_name}.{f.name}")
+            parts.append(f"{state_ref}.{f.name}")
         else:
             parts.append(_zero_literal(f.width))
         next_bit = f.lsb - 1
@@ -122,13 +111,9 @@ def reg_read_expr(reg: RegModel, data_width: int) -> str:
         parts.append(f"{next_bit + 1}'h0")
 
     if reg.regwidth == data_width:
-        # Exact width: if single field covering full width, skip concat
         if len(parts) == 1:
             return parts[0]
         return "{" + ", ".join(parts) + "}"
-    # Pad with zeros to data_width
     pad = data_width - reg.regwidth
-    body = "{" + ", ".join(parts) + "}"
-    if len(parts) == 1:
-        body = parts[0]
-    return "{" + f"{pad}'h0" + ", " + body + "}"
+    body = parts[0] if len(parts) == 1 else "{" + ", ".join(parts) + "}"
+    return "{" + f"{pad}'h0, {body}" + "}"

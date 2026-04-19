@@ -52,11 +52,16 @@ def test_scan_regfile_flattens(tmp_path) -> None:
     d = scan(top)
     names = [r.name for r in d.regs]
     assert names == ["rf_r0", "rf_r1"]
-    assert d.regs[0].address == 0x10
-    assert d.regs[1].address == 0x14
+    assert d.regs[0].base_address == 0x10
+    assert d.regs[1].base_address == 0x14
+    # Regs inside a regfile container are scalar, not array.
+    assert d.regs[0].array_count is None
 
 
-def test_scan_reg_array_unrolls(tmp_path) -> None:
+def test_scan_reg_array_kept_as_one(tmp_path) -> None:
+    """RDL `reg ch[3]` becomes one RegModel with array_count=3 (one
+    Vec-typed reg in the generated ARCH), not three separately-named
+    scalar RegModels."""
     top = _compile_rdl(tmp_path, """
         addrmap t {
             reg {
@@ -65,8 +70,17 @@ def test_scan_reg_array_unrolls(tmp_path) -> None:
         };
     """)
     d = scan(top)
-    assert [r.name for r in d.regs] == ["ch_0", "ch_1", "ch_2"]
-    assert [r.address for r in d.regs] == [0x0, 0x4, 0x8]
+    assert len(d.regs) == 1
+    reg = d.regs[0]
+    assert reg.name == "ch"
+    assert reg.array_count == 3
+    assert reg.array_stride == 4
+    assert reg.base_address == 0x0
+    # `elements()` enumerates per-instance addresses for the address decode.
+    assert list(reg.elements()) == [(0, 0x0), (1, 0x4), (2, 0x8)]
+    # State references use Vec subscript form.
+    assert reg.state_ref(0) == "ch_r[0]"
+    assert reg.state_ref(2) == "ch_r[2]"
 
 
 def test_validate_rejects_mem(tmp_path) -> None:

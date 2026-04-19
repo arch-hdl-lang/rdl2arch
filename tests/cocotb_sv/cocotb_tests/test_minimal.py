@@ -23,11 +23,11 @@ async def ctrl_write_read(dut):
     # enable[0]=1, mode[4:1]=0xA => wdata = (0xA<<1)|1 = 0x15
     await drv.write(0x0, 0x15)
     assert await drv.read(0x0) == 0x15
-    # ARCH packs structs LSB→MSB in declaration order. hwif_out has
-    # ctrl_enable first (→ bit[0]) and ctrl_mode second (→ bits[4:1]).
+    # ARCH packs structs first-declared = MSB (standard SV convention).
+    # hwif_out = {ctrl_enable[4], ctrl_mode[3:0]} — ctrl_enable first → MSB.
     hw = int(dut.hwif_out.value)
-    assert hw & 0x1 == 1, f"ctrl_enable={hw & 0x1}"
-    assert (hw >> 1) & 0xF == 0xA, f"ctrl_mode={(hw >> 1) & 0xF:#x}"
+    assert (hw >> 4) & 0x1 == 1, f"ctrl_enable={(hw >> 4) & 0x1}"
+    assert hw & 0xF == 0xA, f"ctrl_mode={hw & 0xF:#x}"
 
 
 @cocotb.test()
