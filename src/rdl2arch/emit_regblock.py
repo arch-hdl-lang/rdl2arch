@@ -37,6 +37,20 @@ def emit_regblock(design: DesignModel, cpuif: CpuifBase) -> str:
     lines.append(cpuif.subordinate_port())
     lines.append(f"  port hwif_in:  in {design.hwif_in_struct};")
     lines.append(f"  port hwif_out: out {design.hwif_out_struct};")
+    # Optional per-reg read / write pulse outputs, gated by the
+    # `emit_read_pulse` / `emit_write_pulse` UDPs (see rdl2arch.udps).
+    # Scalar-only in v1 — per-element pulses for arrays add a UInt<N>
+    # bitmap port we haven't needed yet.
+    for reg in design.regs:
+        if reg.is_array and (reg.emit_read_pulse or reg.emit_write_pulse):
+            raise ValueError(
+                f"reg '{reg.name}': emit_read_pulse / emit_write_pulse are "
+                f"not yet supported on register arrays"
+            )
+        if reg.emit_read_pulse:
+            lines.append(f"  port {reg.name}_read_pulse:  out Bool;")
+        if reg.emit_write_pulse:
+            lines.append(f"  port {reg.name}_write_pulse: out Bool;")
     lines.append("")
     lines.append("  default seq on clk rising;")
     lines.append("")
@@ -191,6 +205,21 @@ def emit_regblock(design: DesignModel, cpuif: CpuifBase) -> str:
     lines.append("  comb")
     lines.append(_indent(cpuif.handshake_comb(), 4))
     lines.append("")
+    # Per-reg read / write pulses: one-cycle-hot when bus fires at the
+    # matching address. `rd_fire` / `wr_fire` are whatever the cpuif
+    # considers "SW access completed this cycle" (AXI4-Lite: ar/aw
+    # handshake with response slot free; APB4: psel & penable & direction).
+    for reg in design.regs:
+        if reg.emit_read_pulse:
+            lines.append(
+                f"    {reg.name}_read_pulse  = {rd_fire} and "
+                f"{rd_addr} == {_addr_literal(design.addr_width, reg.base_address)};"
+            )
+        if reg.emit_write_pulse:
+            lines.append(
+                f"    {reg.name}_write_pulse = {wr_fire} and "
+                f"{wr_addr} == {_addr_literal(design.addr_width, reg.base_address)};"
+            )
     any_hwif_out = False
     for reg in design.regs:
         for elem_idx, _ in reg.elements():

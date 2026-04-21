@@ -5,6 +5,7 @@ from systemrdl import RDLCompiler
 
 from rdl2arch.identifier_filter import filter_identifier
 from rdl2arch.scan_design import scan
+from rdl2arch.udps import ALL_UDPS
 from rdl2arch.validate_design import UnsupportedRdlError, validate
 
 
@@ -12,6 +13,8 @@ def _compile_rdl(tmp_path, source: str):
     rdl = tmp_path / "x.rdl"
     rdl.write_text(source)
     rdlc = RDLCompiler()
+    for udp in ALL_UDPS:
+        rdlc.register_udp(udp, soft=False)
     rdlc.compile_file(str(rdl))
     return rdlc.elaborate().top
 
@@ -95,3 +98,105 @@ def test_validate_rejects_mem(tmp_path) -> None:
     d = scan(top)
     with pytest.raises(UnsupportedRdlError, match="mem"):
         validate(d)
+
+
+# ── emit_read_pulse / emit_write_pulse UDPs ────────────────────────────────
+
+
+def test_scan_default_pulse_flags_false(tmp_path) -> None:
+    """Regs without the UDP get emit_*_pulse = False."""
+    top = _compile_rdl(tmp_path, """
+        addrmap t {
+            reg { field { sw = rw; hw = r; reset = 0; } v[31:0]; } r0 @ 0x0;
+        };
+    """)
+    d = scan(top)
+    assert d.regs[0].emit_read_pulse is False
+    assert d.regs[0].emit_write_pulse is False
+
+
+def test_scan_picks_up_read_pulse(tmp_path) -> None:
+    top = _compile_rdl(tmp_path, """
+        addrmap t {
+            reg {
+                emit_read_pulse = true;
+                field { sw = r; hw = w; reset = 0; } v[31:0];
+            } claim @ 0x0;
+        };
+    """)
+    d = scan(top)
+    assert d.regs[0].emit_read_pulse is True
+    assert d.regs[0].emit_write_pulse is False
+
+
+def test_scan_picks_up_write_pulse(tmp_path) -> None:
+    top = _compile_rdl(tmp_path, """
+        addrmap t {
+            reg {
+                emit_write_pulse = true;
+                field { sw = w; hw = r; reset = 0; } v[31:0];
+            } complete @ 0x0;
+        };
+    """)
+    d = scan(top)
+    assert d.regs[0].emit_read_pulse is False
+    assert d.regs[0].emit_write_pulse is True
+
+
+def test_emit_pulse_ports_and_comb(tmp_path) -> None:
+    """End-to-end: scan → emit produces the expected ports + comb assigns."""
+    from rdl2arch.cpuif.axi4lite import AXI4Lite_Cpuif
+    from rdl2arch.emit_regblock import emit_regblock
+    top = _compile_rdl(tmp_path, """
+        addrmap p {
+            reg {
+                emit_read_pulse = true;
+                field { sw = r; hw = w; reset = 0; } v[31:0];
+            } claim @ 0x0;
+            reg {
+                emit_write_pulse = true;
+                field { sw = w; hw = r; reset = 0; } v[31:0];
+            } complete @ 0x4;
+            reg {
+                emit_read_pulse = true;
+                emit_write_pulse = true;
+                field { sw = rw; hw = rw; reset = 0; } v[31:0];
+            } both @ 0x8;
+            reg {
+                // No UDP — no pulse ports for this one.
+                field { sw = rw; hw = r; reset = 0; } v[31:0];
+            } plain @ 0xC;
+        };
+    """)
+    d = scan(top)
+    src = emit_regblock(d, AXI4Lite_Cpuif(d.addr_width, d.data_width))
+
+    # Port declarations
+    assert "port claim_read_pulse:" in src
+    assert "port complete_write_pulse:" in src
+    assert "port both_read_pulse:" in src
+    assert "port both_write_pulse:" in src
+    # Unflagged reg must NOT get pulse ports
+    assert "plain_read_pulse" not in src
+    assert "plain_write_pulse" not in src
+    # Comb assignments wire the pulse to rd_fire/wr_fire + address match
+    assert "claim_read_pulse  = rd_fire and" in src
+    assert "complete_write_pulse = wr_fire and" in src
+
+
+def test_emit_pulse_rejects_array_regs(tmp_path) -> None:
+    """v1: pulse UDPs on an array reg is rejected (per-element pulse
+    would need a UInt<N> output which we haven't implemented yet)."""
+    from rdl2arch.cpuif.axi4lite import AXI4Lite_Cpuif
+    from rdl2arch.emit_regblock import emit_regblock
+    top = _compile_rdl(tmp_path, """
+        addrmap t {
+            reg {
+                emit_read_pulse = true;
+                field { sw = r; hw = w; reset = 0; } v[31:0];
+            } slots[4] @ 0x0;
+        };
+    """)
+    d = scan(top)
+    with pytest.raises(ValueError, match="emit_read_pulse"):
+        emit_regblock(d, AXI4Lite_Cpuif(d.addr_width, d.data_width))
