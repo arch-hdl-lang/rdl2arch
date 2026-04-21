@@ -38,6 +38,10 @@ class RegModel:
     # Array dimensions. Both None for scalar regs; both set for arrays.
     array_count: Optional[int] = None
     array_stride: Optional[int] = None    # bytes between elements
+    # Optional side-effect pulse outputs (set via UDPs in `rdl2arch.udps`).
+    # See that module's docstring for semantics.
+    emit_read_pulse: bool = False
+    emit_write_pulse: bool = False
 
     @property
     def is_array(self) -> bool:
@@ -153,6 +157,8 @@ def _scan_reg(reg: RegNode, top: AddrmapNode) -> RegModel:
         regwidth=reg.get_property("regwidth"),
         array_count=array_count,
         array_stride=array_stride,
+        emit_read_pulse=_get_optional_udp_bool(reg, "emit_read_pulse"),
+        emit_write_pulse=_get_optional_udp_bool(reg, "emit_write_pulse"),
     )
     for fnode in reg.fields():
         m.fields.append(_scan_field(fnode))
@@ -178,3 +184,15 @@ def _scan_field(f: FieldNode) -> FieldModel:
 
 def _camel(snake: str) -> str:
     return "".join(p[:1].upper() + p[1:] for p in snake.split("_") if p)
+
+
+def _get_optional_udp_bool(node, name: str) -> bool:
+    """Read a boolean UDP, returning False if the UDP isn't registered.
+
+    Makes rdl2arch's optional UDPs (see `rdl2arch.udps`) truly optional:
+    callers who don't use them don't need to call `register_udp` at all.
+    """
+    try:
+        return bool(node.get_property(name) or False)
+    except LookupError:
+        return False
