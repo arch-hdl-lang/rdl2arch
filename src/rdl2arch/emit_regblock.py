@@ -2,6 +2,8 @@
 
 from enum import Enum
 
+from systemrdl.node import FieldNode
+
 from .cpuif.base import CpuifBase
 from .emit_field_logic import (
     field_hwif_in_seq,
@@ -10,7 +12,7 @@ from .emit_field_logic import (
     field_write_stmts,
     reg_read_expr,
 )
-from .scan_design import DesignModel, RegModel
+from .scan_design import DesignModel, FieldModel, RegModel
 
 
 class ResetStyle(Enum):
@@ -63,6 +65,54 @@ def _addr_literal(addr_width: int, value: int) -> str:
     return f"{addr_width}'h{value:x}"
 
 
+def _resolve_companion(
+    design: DesignModel, target: FieldNode
+) -> tuple[RegModel, FieldModel]:
+    """Map an RDL-linked `enable` / `mask` FieldNode back to the
+    (RegModel, FieldModel) that the design already knows about.
+
+    systemrdl-compiler wraps nodes in fresh objects on each traversal,
+    so identity comparison doesn't work — we match by `.get_path()`
+    which is stable across lookups of the same elaborated field.
+    """
+    target_path = target.get_path()
+    for reg in design.regs:
+        for fld in reg.fields:
+            if fld.node.get_path() == target_path:
+                return reg, fld
+    raise ValueError(
+        f"intr enable/mask target '{target_path}' was not found in "
+        f"the scanned design — this usually means the target reg is "
+        f"outside the addrmap being emitted"
+    )
+
+
+def _intr_field_contrib(design: DesignModel, reg: RegModel, fld: FieldModel) -> str:
+    """One field's contribution to the `<reg>_intr` OR-reduction.
+
+    Emits a Bool expression:
+      - plain intr field            → `<reg>_r.<f> != N'h0`
+      - with ->enable companion     → `(<reg>_r.<f> & <en_reg>_r.<en_f>) != N'h0`
+      - with ->mask companion       → `(<reg>_r.<f> & ~<mask_reg>_r.<mask_f>) != N'h0`
+
+    All intr regs that contain intr fields are scalar in v1 (validator
+    rejects array-reg companions, and the user hasn't asked for
+    array-reg intr sources), so we always index with element 0.
+    """
+    state_field = f"{reg.state_ref(0)}.{fld.name}"
+    zero = f"{fld.width}'h0" if fld.width > 1 else "1'h0"
+
+    if fld.enable_field is not None:
+        en_reg, en_fld = _resolve_companion(design, fld.enable_field)
+        en_ref = f"{en_reg.state_ref(0)}.{en_fld.name}"
+        return f"({state_field} & {en_ref}) != {zero}"
+    if fld.mask_field is not None:
+        mk_reg, mk_fld = _resolve_companion(design, fld.mask_field)
+        mk_ref = f"{mk_reg.state_ref(0)}.{mk_fld.name}"
+        return f"({state_field} & (~{mk_ref})) != {zero}"
+    return f"{state_field} != {zero}"
+
+
 def emit_regblock(
     design: DesignModel,
     cpuif: CpuifBase,
@@ -94,6 +144,21 @@ def emit_regblock(
             lines.append(f"  port {reg.name}_read_pulse:  out Bool;")
         if reg.emit_write_pulse:
             lines.append(f"  port {reg.name}_write_pulse: out Bool;")
+    # Register-level interrupt output: one Bool per reg that has any
+    # `intr` field, driven by the OR-reduction of each field's
+    # (optionally masked/enabled) contribution. Wired up in the comb
+    # block below. v1: scalar regs only (mirror of the emit_*_pulse
+    # scope — per-element intr vectors on arrays aren't needed yet).
+    for reg in design.regs:
+        if not reg.has_intr_field:
+            continue
+        if reg.is_array:
+            raise ValueError(
+                f"reg '{reg.name}': intr fields on register arrays are not "
+                f"yet supported — would need a per-element UInt<N> intr "
+                f"output bitmap"
+            )
+        lines.append(f"  port {reg.name}_intr:        out Bool;")
     lines.append("")
     lines.append("  default seq on clk rising;")
     lines.append("")
@@ -276,6 +341,22 @@ def emit_regblock(
                 any_hwif_out = True
     if not any_hwif_out:
         lines.append("    hwif_out._reserved = 0;")
+    # Register-level interrupt output: OR of each intr field's
+    # contribution. Companion `->enable` / `->mask` linkage handled
+    # inside `_intr_field_contrib`. For 0 intr fields per reg the
+    # port isn't emitted, so nothing runs here either.
+    for reg in design.regs:
+        if not reg.has_intr_field:
+            continue
+        intr_fields = [f for f in reg.fields if f.is_intr]
+        contribs = [_intr_field_contrib(design, reg, f) for f in intr_fields]
+        if len(contribs) == 1:
+            expr = contribs[0]
+        else:
+            # Parenthesize each term so `or` precedence is unambiguous
+            # to arch-com's parser.
+            expr = " or ".join(f"({c})" for c in contribs)
+        lines.append(f"    {reg.name}_intr = {expr};")
     lines.append("  end comb")
     lines.append("")
     lines.append(f"end module {design.module_name}")

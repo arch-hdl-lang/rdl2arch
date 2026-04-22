@@ -23,6 +23,19 @@ class FieldModel:
     reset: int
     onwrite: Optional[OnWriteType]
     onread: Optional[OnReadType]
+    # --- Interrupt / sticky support (v1: `level` intr + `stickybit` only) ---
+    # `is_intr` marks the field as an interrupt source that contributes to
+    # the register-level `<reg>_intr` Bool output. `is_stickybit` turns the
+    # HW-write lane into an OR-latch so the bit stays asserted until SW
+    # clears it (typical RDL IRQ_STATUS pattern). `enable_field` /
+    # `mask_field` hold the RDL-linked companion FieldNode when
+    # `->enable = ...` / `->mask = ...` are used in the fixture; the
+    # emitter resolves them back to `<other_reg>_r.<other_field>` at
+    # emit time. Only one of the two can be set per field.
+    is_intr: bool = False
+    is_stickybit: bool = False
+    enable_field: Optional[FieldNode] = None
+    mask_field: Optional[FieldNode] = None
 
 
 @dataclass
@@ -46,6 +59,13 @@ class RegModel:
     @property
     def is_array(self) -> bool:
         return self.array_count is not None
+
+    @property
+    def has_intr_field(self) -> bool:
+        """True if any child field is marked `intr`. When True the
+        emitter adds a `<reg>_intr: out Bool` output port and the
+        matching OR-reduction in the comb block."""
+        return any(f.is_intr for f in self.fields)
 
     def elements(self) -> Iterator[Tuple[int, int]]:
         """Yield (element_index, byte_address) per instance.
@@ -178,6 +198,17 @@ def _scan_reg(reg: RegNode, top: AddrmapNode) -> RegModel:
 
 
 def _scan_field(f: FieldNode) -> FieldModel:
+    enable = f.get_property("enable")
+    mask = f.get_property("mask")
+    # RDL allows `enable` / `mask` to reference a SignalNode or an
+    # integer literal in addition to another FieldNode. v1 only handles
+    # the FieldNode form (which is the common "companion register"
+    # pattern). Other forms are filtered to None here and rejected
+    # loudly in validate_design so users get an actionable error.
+    if enable is not None and not isinstance(enable, FieldNode):
+        enable = None
+    if mask is not None and not isinstance(mask, FieldNode):
+        mask = None
     return FieldModel(
         node=f,
         name=deref.field_ident(f),
@@ -191,6 +222,10 @@ def _scan_field(f: FieldNode) -> FieldModel:
         reset=int(f.get_property("reset") or 0),
         onwrite=f.get_property("onwrite"),
         onread=f.get_property("onread"),
+        is_intr=bool(f.get_property("intr") or False),
+        is_stickybit=bool(f.get_property("stickybit") or False),
+        enable_field=enable,
+        mask_field=mask,
     )
 
 

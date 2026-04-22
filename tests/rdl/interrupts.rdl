@@ -1,0 +1,46 @@
+// Exercises the interrupt / sticky field support:
+//   - `intr` + `stickybit` with SW write-1-to-clear (typical IRQ_STATUS)
+//   - `->enable` companion linkage to another register's field
+//   - `->mask` companion linkage (opposite polarity)
+//   - A plain `intr` field (no `stickybit`, no linkage) to cover the
+//     non-latching, bare contribution path
+//   - A reg with NO intr fields to confirm no spurious `_intr` port
+//
+// Layout mimics the UART/SPI IRQ_STATUS + IRQ_ENABLE pattern common in
+// real IP: the generated regblock exposes a single `irq_status_intr`
+// Bool output that fires only when a masked/enabled source is latched.
+addrmap interrupts {
+    // Sticky interrupt status: SW reads the pending bits and writes 1
+    // to clear. HW drives the source pulse on `hwif_in.irq_status_<f>`.
+    reg {
+        // `intr` implies `stickybit = true` by default in RDL — no
+        // need to repeat it explicitly on these three sticky sources.
+        field { sw = rw; hw = w; onwrite = woclr; intr; } rx_done[0:0];
+        field { sw = rw; hw = w; onwrite = woclr; intr; } tx_done[1:1];
+        field { sw = rw; hw = w; onwrite = woclr; intr; } err[2:2];
+        // Non-sticky ("live") intr source: bit transparently reflects
+        // hwif_in each cycle. We have to override the RDL default
+        // `stickybit = true` with an explicit `stickybit = false`;
+        // useful for feeding the composite intr output from a signal
+        // that the peripheral itself already latches.
+        field { sw = r;  hw = w; intr; stickybit = false;  } live[3:3];
+    } irq_status @ 0x0;
+
+    // Enable / mask register. SW-owned; HW reads the state so other
+    // blocks in the SoC can observe it if needed.
+    reg {
+        field { sw = rw; hw = r; reset = 0x0; } rx_done_en[0:0];
+        field { sw = rw; hw = r; reset = 0x0; } tx_done_en[1:1];
+        // Mask polarity: err bit suppressed when this is 1.
+        field { sw = rw; hw = r; reset = 0x0; } err_mask[2:2];
+    } irq_enable @ 0x4;
+
+    // Plain SW scratch register — no intr fields, so no `_intr` port.
+    reg {
+        field { sw = rw; hw = r; reset = 0x0; } v[7:0];
+    } scratch @ 0x8;
+
+    irq_status.rx_done->enable = irq_enable.rx_done_en;
+    irq_status.tx_done->enable = irq_enable.tx_done_en;
+    irq_status.err->mask       = irq_enable.err_mask;
+};
