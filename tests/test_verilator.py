@@ -33,6 +33,7 @@ FIXTURES = {
     "access_types":         "test_access_types",
     "arrays_and_regfile":   "test_arrays_and_regfile",
     "readonly":             "test_readonly",
+    "interrupts":           "test_interrupts",
 }
 
 CPUIFS = {

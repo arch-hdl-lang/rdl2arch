@@ -1,0 +1,40 @@
+package InterruptsPkg
+
+  enum InterruptsCsr
+    IrqStatus,
+    IrqEnable,
+    Scratch
+  end enum InterruptsCsr
+
+  struct IrqStatusReg
+    rx_done: UInt<1>;
+    tx_done: UInt<1>;
+    err: UInt<1>;
+    live: UInt<1>;
+  end struct IrqStatusReg
+
+  struct IrqEnableReg
+    rx_done_en: UInt<1>;
+    tx_done_en: UInt<1>;
+    err_mask: UInt<1>;
+  end struct IrqEnableReg
+
+  struct ScratchReg
+    v: UInt<8>;
+  end struct ScratchReg
+
+  struct InterruptsHwifIn
+    irq_status_rx_done: UInt<1>;
+    irq_status_tx_done: UInt<1>;
+    irq_status_err: UInt<1>;
+    irq_status_live: UInt<1>;
+  end struct InterruptsHwifIn
+
+  struct InterruptsHwifOut
+    irq_enable_rx_done_en: UInt<1>;
+    irq_enable_tx_done_en: UInt<1>;
+    irq_enable_err_mask: UInt<1>;
+    scratch_v: UInt<8>;
+  end struct InterruptsHwifOut
+
+end package InterruptsPkg

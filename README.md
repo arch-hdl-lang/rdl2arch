@@ -20,12 +20,17 @@ Supported:
 - `onwrite = woclr / woset / wclr / wset / wot / wzc / wzs / wzt`.
 - `onread = rclr / rset`.
 - Explicit per-field `reset` values.
+- Interrupt fields: `intr` + `stickybit` (the common IRQ_STATUS pattern),
+  with optional `->enable` / `->mask` linkage to companion-register fields.
+  Each register with `intr` fields gets a composite `<reg>_intr: out Bool`.
 - CPU interfaces: AXI4-Lite and APB4 (subordinate), emitted as an ARCH `bus`.
 - Read-back via an exhaustive `match` over decoded register addresses.
 
 Not yet supported (rejected with an actionable error):
 - RDL `mem` blocks.
-- Counters, interrupt / sticky fields.
+- Counter fields.
+- Edge-detect interrupts (`intr type = posedge/negedge/bothedge`), field-wide
+  `sticky`, `halt` / `haltenable` / `haltmask`.
 - AHB-Lite or other CPU interfaces.
 - RISC-V CSR semantics — see the companion `rdl2arch-riscv` package.
 

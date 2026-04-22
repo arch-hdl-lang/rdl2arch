@@ -25,7 +25,7 @@ from conftest import RDL_DIR
 
 EXPECTED_DIR = Path(__file__).parent / "expected"
 CPUIFS = {"axi4-lite": AXI4Lite_Cpuif, "apb4": APB4_Cpuif}
-FIXTURES = ["minimal", "access_types", "arrays_and_regfile", "readonly"]
+FIXTURES = ["minimal", "access_types", "arrays_and_regfile", "readonly", "interrupts"]
 
 
 def _update_mode() -> bool:

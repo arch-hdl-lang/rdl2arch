@@ -75,10 +75,24 @@ def field_read_side_stmts(field: FieldModel, state_ref: str) -> list[str]:
 
 
 def field_hwif_in_seq(field: FieldModel, state_ref: str, hwif_member: str) -> list[str]:
-    """Continuous register copy from hwif_in to the field state (when hw drives)."""
+    """Continuous register copy from hwif_in to the field state (when hw drives).
+
+    For sticky interrupt fields (`intr` + `stickybit`) we emit an
+    OR-latch instead of a plain copy so any 1 cycle of hwif_in high
+    stays latched high until SW write-1-to-clear resets it. This
+    runs on every clock edge — the downstream `if wr_fire` SW-write
+    branch overrides in the same cycle via last-write-wins seq
+    semantics (SW w1c beats HW-set on conflict; next cycle the
+    OR-latch re-asserts if HW is still driving high, which is the
+    standard sticky precedence).
+    """
     if not field.hw_writable:
         return []
-    return [f"{state_ref}.{field.name} <= hwif_in.{hwif_member};"]
+    lhs = f"{state_ref}.{field.name}"
+    rhs = f"hwif_in.{hwif_member}"
+    if field.is_intr and field.is_stickybit:
+        return [f"{lhs} <= {lhs} | {rhs};"]
+    return [f"{lhs} <= {rhs};"]
 
 
 def field_hwif_out_comb(field: FieldModel, state_ref: str, hwif_member: str) -> list[str]:

@@ -1,0 +1,80 @@
+use InterruptsPkg;
+
+bus Apb4
+  param ADDR_W: const = 4;
+  param DATA_W: const = 32;
+
+  psel:    out Bool;
+  penable: out Bool;
+  pwrite:  out Bool;
+  paddr:   out UInt<ADDR_W>;
+  pwdata:  out UInt<DATA_W>;
+  pstrb:   out UInt<4>;
+  pprot:   out UInt<3>;
+
+  pready:  in  Bool;
+  prdata:  in  UInt<DATA_W>;
+  pslverr: in  Bool;
+end bus Apb4
+
+module Interrupts
+  port clk:      in Clock<SysDomain>;
+  port rst:      in Reset<Sync>;
+  port s_apb: target Apb4<ADDR_W=4, DATA_W=32>;
+  port hwif_in:  in InterruptsHwifIn;
+  port hwif_out: out InterruptsHwifOut;
+  port irq_status_intr:        out Bool;
+
+  default seq on clk rising;
+
+  reg irq_status_r: IrqStatusReg reset rst => IrqStatusReg { rx_done: 0, tx_done: 0, err: 0, live: 0 };
+  reg irq_enable_r: IrqEnableReg reset rst => IrqEnableReg { rx_done_en: 0, tx_done_en: 0, err_mask: 0 };
+  reg scratch_r: ScratchReg reset rst => ScratchReg { v: 0 };
+
+  let access: Bool = s_apb.psel and s_apb.penable;
+  let wr_fire: Bool = access and s_apb.pwrite;
+  let rd_fire: Bool = access and not s_apb.pwrite;
+
+  let rdata_mux: UInt<32> = match s_apb.paddr
+    4'h0 => {28'h0, irq_status_r.live, irq_status_r.err, irq_status_r.tx_done, irq_status_r.rx_done},
+    4'h4 => {29'h0, irq_enable_r.err_mask, irq_enable_r.tx_done_en, irq_enable_r.rx_done_en},
+    4'h8 => {24'h0, scratch_r.v},
+    _ => 0
+  end match;
+
+  seq
+
+    irq_status_r.rx_done <= irq_status_r.rx_done | hwif_in.irq_status_rx_done;
+    irq_status_r.tx_done <= irq_status_r.tx_done | hwif_in.irq_status_tx_done;
+    irq_status_r.err <= irq_status_r.err | hwif_in.irq_status_err;
+    irq_status_r.live <= hwif_in.irq_status_live;
+    if wr_fire
+      if s_apb.paddr == 4'h0
+        irq_status_r.rx_done <= irq_status_r.rx_done & (~s_apb.pwdata[0]);
+        irq_status_r.tx_done <= irq_status_r.tx_done & (~s_apb.pwdata[1]);
+        irq_status_r.err <= irq_status_r.err & (~s_apb.pwdata[2]);
+      end if
+      if s_apb.paddr == 4'h4
+        irq_enable_r.rx_done_en <= s_apb.pwdata[0];
+        irq_enable_r.tx_done_en <= s_apb.pwdata[1];
+        irq_enable_r.err_mask <= s_apb.pwdata[2];
+      end if
+      if s_apb.paddr == 4'h8
+        scratch_r.v <= s_apb.pwdata[7:0];
+      end if
+    end if
+  end seq
+
+  comb
+    s_apb.pready  = true;
+    s_apb.prdata  = rdata_mux;
+    s_apb.pslverr = false;
+
+    hwif_out.irq_enable_rx_done_en = irq_enable_r.rx_done_en;
+    hwif_out.irq_enable_tx_done_en = irq_enable_r.tx_done_en;
+    hwif_out.irq_enable_err_mask = irq_enable_r.err_mask;
+    hwif_out.scratch_v = scratch_r.v;
+    irq_status_intr = ((irq_status_r.rx_done & irq_enable_r.rx_done_en) != 1'h0) or ((irq_status_r.tx_done & irq_enable_r.tx_done_en) != 1'h0) or ((irq_status_r.err & (~irq_enable_r.err_mask)) != 1'h0) or (irq_status_r.live != 1'h0);
+  end comb
+
+end module Interrupts
