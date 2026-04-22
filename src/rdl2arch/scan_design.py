@@ -92,18 +92,30 @@ class DesignModel:
 
 def scan(top: AddrmapNode, *, module_name: Optional[str] = None,
          package_name: Optional[str] = None,
-         data_width: int = 32) -> DesignModel:
+         data_width: int = 32,
+         addr_width: Optional[int] = None) -> DesignModel:
+    """Walk `top` and produce a DesignModel.
+
+    `addr_width`, when supplied, overrides the default derivation
+    from the maximum register address. Useful when the regblock sits
+    behind a wider bus than its own address footprint needs (caller
+    pads), or when a fixture wants a stable width regardless of
+    register-map size.
+    """
     top_name = top.inst_name
     mod = module_name or _camel(top_name)
     pkg = package_name or (mod + "Pkg")
 
     regs: list[RegModel] = [_scan_reg(reg, top) for reg in _walk_regs(top)]
 
-    max_addr = 0
-    for r in regs:
-        for _, addr in r.elements():
-            max_addr = max(max_addr, addr + (r.regwidth // 8) - 1)
-    addr_width = max(1, max_addr.bit_length())
+    if addr_width is None:
+        max_addr = 0
+        for r in regs:
+            for _, addr in r.elements():
+                max_addr = max(max_addr, addr + (r.regwidth // 8) - 1)
+        addr_width = max(1, max_addr.bit_length())
+    elif addr_width < 1:
+        raise ValueError(f"addr_width must be >= 1, got {addr_width}")
 
     return DesignModel(
         top=top,
