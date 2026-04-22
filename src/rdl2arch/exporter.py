@@ -24,13 +24,22 @@ class ArchExporter:
         package_name: Optional[str] = None,
         data_width: int = 32,
         reset_style: ResetStyle = ResetStyle.SYNC,
+        addr_width: Optional[int] = None,
+        port_name: Optional[str] = None,
+        combinational_readback: Optional[bool] = None,
     ) -> dict[str, str]:
         """Emit ARCH source files to output_dir. Returns {filename: path}.
 
-        `reset_style` controls the emitted `port rst: in Reset<...>`
-        type. Default `SYNC` matches the historical behavior; pick
-        `ASYNC_LOW` for RISC-V / Ibex-style integrations where the
-        core clock is gated during reset.
+        Optional overrides (all default to None / library default):
+          - `reset_style`: emitted `rst` port type. `SYNC` is the
+            historical default; use `ASYNC_LOW` for RISC-V/Ibex-style
+            integrations where the core clock is gated during reset.
+          - `addr_width`: override the auto-derived address width
+            (default: `max_addr.bit_length()`).
+          - `port_name`: override the cpuif's subordinate port name
+            (default: cpuif class attr, e.g. `s_axi` / `s_apb`).
+          - `combinational_readback`: override the cpuif's readback
+            timing (default: cpuif class attr, e.g. AXI=False / APB=True).
         """
         if isinstance(node, RootNode):
             top = node.top
@@ -42,10 +51,16 @@ class ArchExporter:
             module_name=module_name,
             package_name=package_name,
             data_width=data_width,
+            addr_width=addr_width,
         )
         validate(design)
 
-        cpuif = cpuif_cls(addr_width=design.addr_width, data_width=design.data_width)
+        cpuif = cpuif_cls(
+            addr_width=design.addr_width,
+            data_width=design.data_width,
+            port_name=port_name,
+            combinational_readback=combinational_readback,
+        )
 
         pkg_src = emit_package(design)
         mod_src = emit_regblock(design, cpuif, reset_style=reset_style)

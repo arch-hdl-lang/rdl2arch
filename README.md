@@ -50,6 +50,39 @@ Produces `out/MyIp.arch` + `out/MyIpPkg.arch`. Compile with the ARCH toolchain:
 arch build out/MyIp.arch out/MyIpPkg.arch
 ```
 
+### Configuration file
+
+Generator knobs can be pinned in an `rdl2arch.toml` next to your RDL
+(auto-discovered by walking up from CWD, same pattern as `pyproject.toml`).
+CLI flags take precedence over the file, which takes precedence over the
+library default — so the file sets project-wide defaults that individual
+invocations can still override.
+
+```toml
+# rdl2arch.toml
+[rdl2arch]
+addr_width   = 16            # override auto-derivation from max register address
+data_width   = 32            # bus data width
+reset_style  = "async-low"   # "sync" (default) | "async-low" | "async-high"
+
+[cpuif.axi4-lite]            # per-cpuif, keyed by the --cpuif CLI token
+port_name              = "s_axi"
+combinational_readback = false
+
+[cpuif.apb4]
+port_name              = "s_apb"
+combinational_readback = true
+```
+
+Unknown keys / sections are rejected with an actionable error so typos
+don't silently no-op. Pass `--config <path>` to load a specific file,
+`--no-config` (or `RDL2ARCH_NO_CONFIG=1`) to skip auto-discovery.
+
+Picking `reset_style = "async-low"` is the recommended setting for
+RISC-V / Ibex / OpenTitan integrations where the core clock is gated
+during reset — a sync-reset flop under a gated clock never sees the
+posedge that would latch its reset value.
+
 ### Example outputs
 
 See `tests/expected/` for checked-in samples — one directory per
@@ -68,18 +101,27 @@ UPDATE_GOLDEN=1 pytest tests/test_golden.py
 
 ```python
 from systemrdl import RDLCompiler
-from rdl2arch import ArchExporter
+from rdl2arch import ArchExporter, ResetStyle
 
 rdlc = RDLCompiler()
 rdlc.compile_file("my_ip.rdl")
 root = rdlc.elaborate()
-ArchExporter().export(root.top, "out/")
+ArchExporter().export(
+    root.top, "out/",
+    # All keyword args are optional; these mirror the TOML knobs:
+    reset_style=ResetStyle.ASYNC_LOW,
+    addr_width=16,
+    port_name="s_axi_main",
+    combinational_readback=False,
+)
 ```
 
 ## Notes on mapping
 
-- Generated subordinate port is named `s_axi` (AXI4-Lite) or `s_apb` (APB4).
-  `bus` is a reserved ARCH keyword and cannot be used as a port name.
+- Generated subordinate port defaults to `s_axi` (AXI4-Lite) or `s_apb`
+  (APB4); override via `[cpuif.<token>].port_name` in `rdl2arch.toml`
+  or `--port-name` on the CLI. `bus` is a reserved ARCH keyword and
+  cannot be used as a port name.
 - One module per `addrmap`. Shared types (CSR enum, register structs, hwif
   structs) go in a `*Pkg.arch` package.
 - RDL `regfile` containers do *not* map to ARCH `regfile` — RDL regfile is a
