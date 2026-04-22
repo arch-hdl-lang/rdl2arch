@@ -7,6 +7,7 @@ from systemrdl import RDLCompileError, RDLCompiler
 
 from .cpuif.apb4 import APB4_Cpuif
 from .cpuif.axi4lite import AXI4Lite_Cpuif
+from .emit_regblock import ResetStyle
 from .exporter import ArchExporter
 
 
@@ -22,6 +23,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--module-name", help="Override module name (default: from RDL top)")
     p.add_argument("--package-name", help="Override package name")
     p.add_argument("--data-width", type=int, default=32, help="Bus data width")
+    p.add_argument(
+        "--reset-style",
+        choices=[s.value for s in ResetStyle],
+        default=ResetStyle.SYNC.value,
+        help=(
+            "Reset style for the emitted `port rst`. `sync` (default) "
+            "→ `Reset<Sync>`. `async-low` → `Reset<Async, Low>` "
+            "(RISC-V / Ibex `rst_ni` convention; required under "
+            "clock-gated cores where the clock doesn't tick during "
+            "reset). `async-high` → `Reset<Async>`."
+        ),
+    )
     args = p.parse_args(argv)
 
     rdlc = RDLCompiler()
@@ -43,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         module_name=args.module_name,
         package_name=args.package_name,
         data_width=args.data_width,
+        reset_style=ResetStyle(args.reset_style),
     )
     for _, path in files.items():
         print(path)
