@@ -184,6 +184,88 @@ def test_emit_pulse_ports_and_comb(tmp_path) -> None:
     assert "complete_write_pulse = wr_fire and" in src
 
 
+def test_reset_style_defaults_to_sync(tmp_path) -> None:
+    """Default `reset_style` keeps the historical `Reset<Sync>` emit
+    so existing callers aren't silently changed."""
+    from rdl2arch.cpuif.axi4lite import AXI4Lite_Cpuif
+    from rdl2arch.emit_regblock import emit_regblock
+    top = _compile_rdl(tmp_path, """
+        addrmap t {
+            reg {
+                field { sw = rw; hw = r; reset = 0; } v[31:0];
+            } r0 @ 0x0;
+        };
+    """)
+    d = scan(top)
+    src = emit_regblock(d, AXI4Lite_Cpuif(d.addr_width, d.data_width))
+    assert "port rst:      in Reset<Sync>;" in src
+    assert "Reset<Async" not in src
+
+
+def test_reset_style_async_low_emits_async_negative(tmp_path) -> None:
+    """`ASYNC_LOW` emits `Reset<Async, Low>` — needed for clock-gated
+    RISC-V integrations (Ibex `rst_ni`)."""
+    from rdl2arch import ResetStyle  # re-exported at top level
+    from rdl2arch.cpuif.axi4lite import AXI4Lite_Cpuif
+    from rdl2arch.emit_regblock import emit_regblock
+    top = _compile_rdl(tmp_path, """
+        addrmap t {
+            reg {
+                field { sw = rw; hw = r; reset = 0; } v[31:0];
+            } r0 @ 0x0;
+        };
+    """)
+    d = scan(top)
+    src = emit_regblock(
+        d,
+        AXI4Lite_Cpuif(d.addr_width, d.data_width),
+        reset_style=ResetStyle.ASYNC_LOW,
+    )
+    assert "port rst:      in Reset<Async, Low>;" in src
+    assert "Reset<Sync>" not in src
+
+
+def test_reset_style_async_high(tmp_path) -> None:
+    from rdl2arch import ResetStyle
+    from rdl2arch.cpuif.axi4lite import AXI4Lite_Cpuif
+    from rdl2arch.emit_regblock import emit_regblock
+    top = _compile_rdl(tmp_path, """
+        addrmap t {
+            reg {
+                field { sw = rw; hw = r; reset = 0; } v[31:0];
+            } r0 @ 0x0;
+        };
+    """)
+    d = scan(top)
+    src = emit_regblock(
+        d,
+        AXI4Lite_Cpuif(d.addr_width, d.data_width),
+        reset_style=ResetStyle.ASYNC_HIGH,
+    )
+    assert "port rst:      in Reset<Async>;" in src
+
+
+def test_cli_reset_style_flag(tmp_path) -> None:
+    """`--reset-style async-low` flows through to the emitted `.arch`."""
+    from rdl2arch.__main__ import main
+    rdl_file = tmp_path / "mini.rdl"
+    rdl_file.write_text("""
+        addrmap m {
+            reg {
+                field { sw = rw; hw = r; reset = 0; } v[31:0];
+            } r0 @ 0x0;
+        };
+    """)
+    rc = main([
+        str(rdl_file),
+        "-o", str(tmp_path),
+        "--reset-style", "async-low",
+    ])
+    assert rc == 0
+    mod_src = (tmp_path / "m.arch").read_text()
+    assert "port rst:      in Reset<Async, Low>;" in mod_src
+
+
 def test_emit_pulse_rejects_array_regs(tmp_path) -> None:
     """v1: pulse UDPs on an array reg is rejected (per-element pulse
     would need a UInt<N> output which we haven't implemented yet)."""

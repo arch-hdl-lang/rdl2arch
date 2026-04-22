@@ -1,5 +1,7 @@
 """Emit the top ARCH regblock module: bus decl + module with regs, seq, comb."""
 
+from enum import Enum
+
 from .cpuif.base import CpuifBase
 from .emit_field_logic import (
     field_hwif_in_seq,
@@ -9,6 +11,42 @@ from .emit_field_logic import (
     reg_read_expr,
 )
 from .scan_design import DesignModel, RegModel
+
+
+class ResetStyle(Enum):
+    """How the emitted regblock's `rst` port is typed.
+
+    The only source-level effect is the `port rst: in Reset<...>`
+    declaration — arch-com (the downstream HDL compiler) takes it from
+    there and emits the appropriate always_ff sensitivity list.
+
+    `SYNC` — `Reset<Sync>`. Active-high sync reset; the reset branch
+    requires a posedge clk to latch. This is the historical default
+    (backward-compatible with every existing caller).
+
+    `ASYNC_LOW` — `Reset<Async, Low>`. Active-low async reset; the
+    reset branch fires on `negedge rst` regardless of clock state.
+    This matches the RISC-V / OpenTitan / Ibex `rst_ni` convention.
+    Required in clock-gated designs where the clock doesn't tick
+    during reset (Ibex's `core_clock_gate_i` is the canonical
+    example).
+
+    `ASYNC_HIGH` — `Reset<Async>`. Active-high async reset; same
+    timing properties as `ASYNC_LOW` but opposite polarity.
+    """
+
+    SYNC = "sync"
+    ASYNC_LOW = "async-low"
+    ASYNC_HIGH = "async-high"
+
+    @property
+    def arch_type(self) -> str:
+        """The ARCH-HDL type literal for this reset style."""
+        return {
+            ResetStyle.SYNC:       "Reset<Sync>",
+            ResetStyle.ASYNC_LOW:  "Reset<Async, Low>",
+            ResetStyle.ASYNC_HIGH: "Reset<Async>",
+        }[self]
 
 
 def _indent(text: str, n: int) -> str:
@@ -25,7 +63,12 @@ def _addr_literal(addr_width: int, value: int) -> str:
     return f"{addr_width}'h{value:x}"
 
 
-def emit_regblock(design: DesignModel, cpuif: CpuifBase) -> str:
+def emit_regblock(
+    design: DesignModel,
+    cpuif: CpuifBase,
+    *,
+    reset_style: ResetStyle = ResetStyle.SYNC,
+) -> str:
     lines: list[str] = []
     lines.append(f"use {design.package_name};")
     lines.append("")
@@ -33,7 +76,7 @@ def emit_regblock(design: DesignModel, cpuif: CpuifBase) -> str:
     lines.append("")
     lines.append(f"module {design.module_name}")
     lines.append("  port clk:      in Clock<SysDomain>;")
-    lines.append("  port rst:      in Reset<Sync>;")
+    lines.append(f"  port rst:      in {reset_style.arch_type};")
     lines.append(cpuif.subordinate_port())
     lines.append(f"  port hwif_in:  in {design.hwif_in_struct};")
     lines.append(f"  port hwif_out: out {design.hwif_out_struct};")
